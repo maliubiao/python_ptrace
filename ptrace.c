@@ -391,17 +391,17 @@ add_fpregs_to_dict(PyObject *fpregs_dict, struct user_fpregs_struct *fpregs)
 }
 
 
-PyDoc_STRVAR(ptrace_getfregs_doc, "copy the tracee's floating-point registers");
+PyDoc_STRVAR(ptrace_getfpregs_doc, "copy the tracee's floating-point registers");
 
 static PyObject *
-ptrace_getfregs(PyObject *object, PyObject *args)
+ptrace_getfpregs(PyObject *object, PyObject *args)
 {
 	pid_t pid;
 	int ret;
 	PyObject *fpregs_dict;
 	struct user_fpregs_struct fpregs;
 	
-	if (!PyArg_ParseTuple(args, "I:getfregs", &pid)) {
+	if (!PyArg_ParseTuple(args, "I:getfpregs", &pid)) {
 		return NULL;
 	} 
 	ret = ptrace(PTRACE_GETREGS, pid, NULL, &fpregs);
@@ -519,8 +519,8 @@ static PyMethodDef ptrace_methods[] = {
 		METH_VARARGS, ptrace_singlestep_doc},
 	{"getregs", (PyCFunction)ptrace_getregs,
 		METH_VARARGS, ptrace_getregs_doc},
-	{"getfregs", (PyCFunction)ptrace_getfregs,
-		METH_VARARGS, ptrace_getfregs_doc},
+	{"getfpregs", (PyCFunction)ptrace_getfpregs,
+		METH_VARARGS, ptrace_getfpregs_doc},
 	{"getuser", (PyCFunction)ptrace_getuser,
 		METH_VARARGS, ptrace_getuser_doc},
 	{NULL, NULL, 0, NULL}

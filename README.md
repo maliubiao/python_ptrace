@@ -88,9 +88,9 @@ Out[11]:
  'rsp': 140736885054152L,
  'ss': 43L}
 ```
-####read_
+####getfpregs(pid)
 ```shell
-In [13]: ptrace.getfregs(3185)
+In [13]: ptrace.getfpregs(3185)
 Out[13]: 
 {'cwd': 0L,
  'fop': 0L,
