@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <sys/ptrace.h>
 #include <sys/user.h>
+#include <signal.h>
 
 
 PyDoc_STRVAR(ptrace_read_memory_doc, "read a word at the address addr in the tracee's memory, returning the word as the result");
@@ -21,6 +22,7 @@ ptrace_read_memory(PyObject *object, PyObject *args)
 	} 
 
 	buffer = PyMem_Malloc(len + sizeof(unsigned long)); 
+	memset(buffer, 0, len + sizeof(unsigned long));
 
 	unsigned t = len / sizeof(unsigned long); 
 	if (len % sizeof(unsigned long) > 0) {
@@ -69,6 +71,7 @@ ptrace_write_memory(PyObject *object, PyObject *args)
 	/* copy to local buffer */
 	len = PyString_GET_SIZE(data);	
 	buffer = PyMem_Malloc(len); 
+	memset(buffer, 0, len);
 	memcpy(buffer, PyString_AS_STRING(data), len); 
 
 	unsigned t = len / sizeof(unsigned long);
@@ -496,6 +499,93 @@ failed:
 	return NULL; 
 }
 
+PyDoc_STRVAR(ptrace_getsiginfo_doc, "retrieve information about the signal that caused the stop. ");
+
+static PyObject *
+ptrace_getsiginfo(PyObject *object, PyObject *args)
+{
+	pid_t pid;
+	int ret;
+	siginfo_t siginfo;
+	PyObject *signal_dict;
+
+	if (!PyArg_ParseTuple(args, "I:getsiginfo", &pid)) {
+		return NULL;
+	}
+
+	memset(&siginfo, 0, sizeof(siginfo));
+
+	ret = ptrace(PTRACE_GETSIGINFO, pid, NULL, &siginfo);
+	if (ret < 0) {
+		PyErr_SetFromErrno(PyExc_OSError);
+		return NULL;
+	}
+	signal_dict = PyDict_New();
+#define DICT_ADD_INT(x, y, z) PyDict_SetItemString(x, y, PyInt_FromLong(z))
+	DICT_ADD_INT(signal_dict, "signo", siginfo.si_signo);
+	DICT_ADD_INT(signal_dict, "code", siginfo.si_code); 
+	DICT_ADD_INT(signal_dict, "pid", siginfo.si_pid);
+	DICT_ADD_INT(signal_dict, "uid", siginfo.si_uid);
+	DICT_ADD_INT(signal_dict, "errno", siginfo.si_errno);
+	DICT_ADD_INT(signal_dict, "overrun", siginfo.si_overrun);
+	DICT_ADD_INT(signal_dict, "timerid", siginfo.si_timerid);
+	DICT_ADD_INT(signal_dict, "band", siginfo.si_band); 
+	DICT_ADD_INT(signal_dict, "fd", siginfo.si_fd);
+	DICT_ADD_INT(signal_dict, "status", siginfo.si_status);
+#undef DICT_ADD_INT	
+#define DICT_ADD_ULONG(x, y, z) PyDict_SetItemString(x, y, PyLong_FromUnsignedLong(z))	
+	DICT_ADD_ULONG(signal_dict, "value", siginfo.si_value.sival_int);
+	DICT_ADD_ULONG(signal_dict, "utime", siginfo.si_utime);
+	DICT_ADD_ULONG(signal_dict, "stime", siginfo.si_stime); 
+#undef DICT_ADD_ULONG	
+	return signal_dict; 
+}
+
+PyDoc_STRVAR(ptrace_geteventmsg_doc, "retrieve a message about the ptrace event that just happened.");
+
+static PyObject *
+ptrace_geteventmsg(PyObject *object, PyObject *args) 
+{
+	pid_t pid; 
+	int ret; 
+	unsigned long data = 0;
+	
+	if (!PyArg_ParseTuple(args, "I:geteventmsg", &pid)) {
+		return NULL;
+	}
+
+	ret = ptrace(PTRACE_GETEVENTMSG, pid, NULL, &data);
+	if (ret < 0) {
+		PyErr_SetFromErrno(PyExc_OSError);
+		return NULL;
+	} 
+
+	return PyLong_FromUnsignedLong(data); 
+}
+
+PyDoc_STRVAR(ptrace_setoptions_doc, "set ptrace options");
+
+static PyObject *
+ptrace_setoptions(PyObject *object, PyObject *args)
+{
+	pid_t pid; 
+	int ret;
+	unsigned long data = 0;
+	
+	if (!PyArg_ParseTuple(args, "Ik:setoptions", &pid, &data)) {
+		return NULL;
+	}
+	
+	ret = ptrace(PTRACE_SETOPTIONS, pid, NULL, data);
+	if (ret < 0) {
+		PyErr_SetFromErrno(PyExc_OSError);
+		return NULL;
+	}
+	Py_RETURN_NONE;
+}
+
+
+
 static PyMethodDef ptrace_methods[] = {
 	{"read_memory", (PyCFunction)ptrace_read_memory,
 		METH_VARARGS, ptrace_read_memory_doc},
@@ -523,6 +613,12 @@ static PyMethodDef ptrace_methods[] = {
 		METH_VARARGS, ptrace_getfpregs_doc},
 	{"getuser", (PyCFunction)ptrace_getuser,
 		METH_VARARGS, ptrace_getuser_doc},
+	{"getsiginfo", (PyCFunction)ptrace_getsiginfo,
+		METH_VARARGS, ptrace_getsiginfo_doc},
+	{"geteventmsg", (PyCFunction)ptrace_geteventmsg,
+		METH_VARARGS, ptrace_geteventmsg_doc}, 
+	{"setoptions", (PyCFunction)ptrace_setoptions,
+		METH_VARARGS, ptrace_setoptions_doc},
 	{NULL, NULL, 0, NULL}
 };
 
@@ -533,5 +629,16 @@ PyMODINIT_FUNC initptrace(void)
 	m = Py_InitModule("ptrace", ptrace_methods);
 	if (m == NULL) {
 		PyErr_SetString(PyExc_RuntimeError, "load ptrace failed"); 
-	}
+		return;
+	} 
+#define OBJECT_ADD_INT(x, y, z) PyModule_AddObject(x, y, PyInt_FromLong(z))
+	OBJECT_ADD_INT(m, "PTRACE_O_EXITKILL", 1 << 20);
+	OBJECT_ADD_INT(m, "PTRACE_O_TRACECLONE", PTRACE_O_TRACECLONE);
+	OBJECT_ADD_INT(m, "PTRACE_O_TRACEEXEC", PTRACE_O_TRACEEXEC);
+	OBJECT_ADD_INT(m, "PTRACE_O_TRACEEXIT", PTRACE_O_TRACEEXIT);
+	OBJECT_ADD_INT(m, "PTRACE_O_TRACEFORK", PTRACE_O_TRACEFORK);
+	OBJECT_ADD_INT(m, "PTRACE_O_TRACESYSGOOD", PTRACE_O_TRACESYSGOOD);
+	OBJECT_ADD_INT(m, "PTRACE_O_TRACEVFORK", PTRACE_O_TRACEVFORK);
+	OBJECT_ADD_INT(m, "PTRACE_O_TRACEVFORKDONE", PTRACE_O_TRACEVFORKDONE);
+#undef OBJECT_ADD_INT 
 }
